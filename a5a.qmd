@@ -1,0 +1,14 @@
+---
+title: "a5a"
+author: "XiaoFei"
+format: html
+editor: visual
+---
+
+## Intro
+
+Assignment is asking to create a csv file that contain flight info by two airline company. we will intentionally create an untidy data set first, and do so data cleaning on data set structure, handle some missing data, etc. And dome analysis on the transformed data set.
+
+For analysis, a bar chart that show which destination has most delayed frequency would be helpful to fulfilled the count analysis requirement.
+
+Discrepancy between two airlines performance can be shown through flight destination, and lateness. for example if one of the company's flight to Los Angles is significantly more than the other company, although destination is the same probably reason for the delay could be contributed to company itself.
