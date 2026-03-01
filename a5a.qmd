@@ -5,10 +5,210 @@ format: html
 editor: visual
 ---
 
-## Intro
+## Introduction
 
-Assignment is asking to create a csv file that contain flight info by two airline company. we will intentionally create an untidy data set first, and do so data cleaning on data set structure, handle some missing data, etc. And dome analysis on the transformed data set.
+Task is to create a csv file that contain flight info by two airline company. we will intentionally create an untidy data set first, and do some data cleaning on data set structure, handle some missing data, etc. Save the tidy_data as a new csv file and perform data analysis.
 
-For analysis, a bar chart that show which destination has most delayed frequency would be helpful to fulfilled the count analysis requirement.
+For analysis, a bar chart will be used to show percentage and flight counts of both delays or arrival rates for two airlines overall. A table will be used to show result of percentage and flight counts of both delays or arrival rates for two airlines across five cities.
 
-Discrepancy between two airlines performance can be shown through flight destination, and lateness. for example if one of the company's flight to Los Angles is significantly more than the other company, although destination is the same probably reason for the delay could be contributed to company itself.
+## Loading Data
+
+A copy of csv was created with the same format from the assignment, uploaded to the github repository. Later a tidy version will also be uploaded as well.
+
+```{r loding, message = FALSE}
+library(tidyverse)
+library(dplyr)
+library(scales)
+library(janitor)
+library(knitr)
+library(kableExtra)
+
+
+untidy_data = read.csv('https://raw.githubusercontent.com/xiaofeimei1/DATA607A5AirlineDelays/refs/heads/main/flightrecords.csv')
+
+untidy_data
+```
+
+## Tidy Data
+
+Original data used "wide" structure, multiple destinations were spread out in multiple columns, some rows missing values, or some columns missing name. Here are procedures to be applied to tidy the data: add names to the first two columns: airline company and flight status; Remove any rows with missing values, convert all numerical strings to be of numeric type by removing comma in some numbers; Use the destination names to convert the data from wide to long, for consistency fill in the airline names on rows that have missing values and do the same for flight status.
+
+```{r tidy}
+colnames(untidy_data)[1] = "airline"
+colnames(untidy_data)[2] = "flight Status"
+
+# Missing data, remove row of blanks
+destination_names <- colnames(untidy_data[3:length(untidy_data)])
+untidy_data <- untidy_data |> na.omit()
+
+# Remove the comma from some large numbers 
+untidy_data <- untidy_data |>
+  mutate(across(all_of(destination_names), 
+                ~ as.numeric(gsub(",", "", .))))
+
+print(untidy_data)
+```
+
+Fill in missing airline values by fill downwards using airlines from above rows.
+
+```{r, message = FALSE}
+# For consistency, combine all destination under new column perspective flight into "Num Flights" column
+long_data <- untidy_data |> 
+  pivot_longer(cols = all_of(destination_names), 
+               names_to = "destination", 
+               values_to = "num flights")
+
+# Clean column names using janitor 
+if (require(janitor, quietly = TRUE)) {
+  long_data <- long_data |> janitor::clean_names()
+} else {
+  colnames(long_data) <- tolower(gsub("[^[:alnum:]]", "_", colnames(long_data)))
+}
+
+# Fill missing airline values, Convert empty airline strings to NA then fill downwards.  
+tidy_data <- long_data |> 
+  mutate(
+    airline = ifelse(airline == "" | is.na(airline), NA, airline)
+  ) |>
+  fill(airline) |>
+  mutate(
+    destination = str_replace(destination, "\\.", " ")
+  )
+
+print(tidy_data)
+ 
+```
+
+After transform data from wide to long format, save a copy of tidy_data in the same folder and github repository.
+
+```{r}
+write.csv(tidy_data, "tidy_data.csv", row.names = FALSE)
+print("File saved as 'tidy_data.csv' in the current folder")
+```
+
+## Data Analysis
+
+Stacked bar chart to compare percentage of delays and on-time rate for tow airlines overall. As showing in the result below, Alaska airline has less flight counts overall and seems to have higher delay rate, 13%.
+
+```{r}
+library(ggplot2)
+
+plot1_data <- tidy_data |>
+  group_by(airline, flight_status) |>
+  summarise(
+    flights = sum(num_flights),
+    .groups = "drop"
+  ) |>
+  group_by(airline) |>
+  mutate(
+    total_airline = sum(flights),
+    delayed_count = sum(flights[flight_status == "delayed"]),
+    ontime_count = sum(flights[flight_status == "on time"]),
+    delayed_pct = round(delayed_count / total_airline * 100),
+    ontime_pct = round(ontime_count / total_airline * 100),
+    color_status = ifelse(flight_status == "delayed", "Delayed", "On Time")
+  ) |>
+  ungroup() |>
+  # Add a column for the top label  
+  group_by(airline) |>
+  mutate(
+    top_label = paste0("Total: ", total_airline, 
+                       "\nDelayed: ", delayed_count, " (", delayed_pct, "%)", 
+                       "\nOn Time: ", ontime_count, " (", ontime_pct, "%)")
+  ) |>
+  ungroup()
+
+# Create the plot 
+plot1 <- ggplot(plot1_data, aes(x = airline, y = flights, fill = color_status)) +
+  geom_bar(stat = "identity", width = 0.7) +
+
+  # Add label on top
+  geom_text(data = plot1_data |> group_by(airline) |> slice(1),
+            aes(x = airline, 
+                y = total_airline + max(plot1_data$total_airline) * 0.08,
+                label = top_label),
+            inherit.aes = FALSE,
+            color = "black",
+            size = 3.5,
+            fontface = "bold",
+            lineheight = 0.9,
+            vjust = 0) +
+  scale_fill_manual(
+    values = c("Delayed" = "#FF4D4D", "On Time" = "#666666"),
+    breaks = c("Delayed", "On Time")
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.25))) +   
+  labs(
+    title = "Airlines Comparison with percentages",
+    y = "Number of Flights",
+    fill = "Flight Status",
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+    plot.subtitle = element_text(hjust = 0.5, color = "gray50", size = 12),
+    axis.title = element_text(face = "bold"),
+    axis.text.x = element_text(face = "bold", size = 11),
+    axis.text.y = element_text(size = 10),
+    legend.position = "top",
+    legend.title = element_text(face = "bold"),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    plot.caption = element_text(color = "gray50", hjust = 0, size = 9)
+  )
+
+print(plot1)
+
+
+```
+
+List statistics in a table to compare percentage of delays and arrival rates for tow airlines across five cities. Across all destination, Alaska airline actually has lower delay percentages than AM West airline. This seems to be a different conclusion than the bar chart above.
+
+```{r}
+
+# Calculate statistics by airline and destination
+airline_comparison <- tidy_data |>
+  group_by(airline, destination, flight_status) |>
+  summarise(
+    flights = sum(num_flights),
+    .groups = "drop"
+  ) |>
+  pivot_wider(
+    names_from = flight_status,
+    values_from = flights,
+    values_fill = 0
+  ) |>
+  mutate(
+    total_flights = delayed + `on time`,
+    delay_pct = round(delayed / total_flights * 100),
+    ontime_pct = round(`on time` / total_flights * 100)
+  ) |>
+  select(airline, destination, total_flights, delayed, `on time`, delay_pct, ontime_pct) |>
+  arrange(destination, airline)
+
+# Display  
+airline_comparison |>
+  kable(
+    caption = "Flight Performance Comparison by Airline and Destination",
+    col.names = c("Airline", "Destination", "Total Flights", "Delayed", "On Time", 
+                  "Delay %", "On Time %"),
+    format = "html"
+  ) |>
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width = FALSE,
+    position = "left",
+    font_size = 12
+  ) |>
+  column_spec(1, bold = TRUE) |>
+  column_spec(2, bold = TRUE) |>
+  column_spec(6, color = "red", bold = TRUE) |>
+  column_spec(7, color = "green", bold = TRUE) |>
+  add_header_above(c(" " = 2, "Flight Counts" = 3, "Percentages" = 2))
+```
+
+## Summary
+
+Two analysis appear to have two different conclusion. Bar chart shows overall AM West has lower delayed rate (11%) compare to Alaska (13%), however different conclusion can be seen from the table where AM had higher delayed rate across all destinations. This is an example of the topic we discussed during class - Simpson's paradox.
+
+After closer look, main reason of the discrepancy came caused by the result in destination Phoenix. In phoenix, AM West had vast majority (73%) of its flights operate on this route and only 8% delay, whereas Alaska's flight volume is more evenly distributed across cities with lower delay rate at every individual destination. The result in Phoenix made AM West appear to have less delay rate overall.
